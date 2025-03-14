@@ -1,32 +1,23 @@
 # Define the two AE servers you host (replace with your actual server hostnames/FQDNs)
-$aeServer1 = "ae1.contoso.com"
-$aeServer2 = "ae2.contoso.com"
+$aeServer1 = "aeserver1.example.com"
+$aeServer2 = "aeserver2.example.com"
 
-# Define the local machine name for reporting
+# Define the local machine name (member server) for reporting
 $localMachine = $env:COMPUTERNAME
 
-# Define DigiCert service targets from documentation
-$digicertUrls = @(
-    "https://one.digicert.com",              # AE Server to DC1 Web Services (HTTPS/443)
-    "https://clientauth.one.digicert.com",   # AE Server to DC1 Web Services (HTTPS/443)
-    "http://ocsp.one.digicert.com",          # OCSP/CRL (HTTP/80)
-    "http://crl.one.digicert.com",           # OCSP/CRL (HTTP/80)
-    "http://cacerts.one.digicert.com"        # OCSP/CRL (HTTP/80)
+# Define OCSP/CRL targets from documentation (for domain members)
+$ocspCrlUrls = @(
+    "http://ocsp.one.digicert.com",
+    "http://crl.one.digicert.com",
+    "http://cacerts.one.digicert.com"
 )
 
-$digicertIPs = @(
-    "45.60.44.211",    # DigiCert CA IPs (HTTPS/443)
-    "45.60.46.211",
-    "45.60.48.211",
-    "45.60.50.211",
-    "45.60.52.211",
-    "45.60.105.211",
-    "216.168.244.38"   # OCSP/CRL IP (HTTP/80)
-)
+$ocspCrlIP = "216.168.244.38"
 
-# Define ports required for AE servers (based on documentation for domain member communication)
+# Define ports required for AE servers (from domain members)
 $aeServerPorts = @{
-    "RPC_Endpoint" = 135    # RPC Endpoint Mapper for DCOM/RPC from domain members to AE servers
+    "RPC_Endpoint" = 135    # RPC Endpoint Mapper for DCOM/RPC
+    # Note: Dynamic range 49152-65535 is implied but not fully tested due to impracticality
 }
 
 # Function to test TCP port connectivity
@@ -65,22 +56,19 @@ function Test-Port {
 # Initialize results array
 $results = @()
 
-Write-Host "Testing connectivity from $localMachine to DigiCert services and hosted AE servers..." -ForegroundColor Green
+Write-Host "Testing connectivity from member server $localMachine to OCSP/CRL and AE servers..." -ForegroundColor Green
 
-# Test DigiCert URLs
-foreach ($url in $digicertUrls) {
+# Test OCSP/CRL URLs
+foreach ($url in $ocspCrlUrls) {
     $uri = [System.Uri]$url
-    $port = if ($uri.Scheme -eq "https") { 443 } else { 80 }
+    $port = 80  # All OCSP/CRL URLs use HTTP/80
     $hostName = $uri.Host
     
-    $results += Test-Port -ComputerName $hostName -Port $port -Protocol $uri.Scheme
+    $results += Test-Port -ComputerName $hostName -Port $port -Protocol "HTTP"
 }
 
-# Test DigiCert IPs
-foreach ($ip in $digicertIPs) {
-    $results += Test-Port -ComputerName $ip -Port 80 -Protocol "HTTP"
-    $results += Test-Port -ComputerName $ip -Port 443 -Protocol "HTTPS"
-}
+# Test OCSP/CRL IP
+$results += Test-Port -ComputerName $ocspCrlIP -Port 80 -Protocol "HTTP"
 
 # Test connectivity to hosted AE servers
 foreach ($aeServer in @($aeServer1, $aeServer2)) {
@@ -104,9 +92,9 @@ $results | Format-Table -AutoSize -Property Source, Target, Port, Protocol, Stat
 
 # Save results to CSV
 $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
-$results | Export-Csv -Path "AE_Connectivity_Test_$localMachine_$timestamp.csv" -NoTypeInformation
+$results | Export-Csv -Path "MemberServer_Connectivity_Test_$localMachine_$timestamp.csv" -NoTypeInformation
 
-Write-Host "Test completed. Results saved to AE_Connectivity_Test_$localMachine_$timestamp.csv" -ForegroundColor Green
+Write-Host "Test completed. Results saved to MemberServer_Connectivity_Test_$localMachine_$timestamp.csv" -ForegroundColor Green
 
 # Check for failures
 $failures = $results | Where-Object { $_.Status -eq "Failed" }
